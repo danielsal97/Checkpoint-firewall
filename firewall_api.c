@@ -5,30 +5,34 @@
 #include <string.h>
 #include <sys/ioctl.h>
 
-#define DEVICE_NAME "/dev/block_device"
+#define DEVICE_NAME "/dev/firewall_device"
 #define IOCTL_ADD_IP_RANGE _IOW('a', 1, char *)
 #define IOCTL_REMOVE_IP_RANGE _IOW('a', 2, char *)
 #define IOCTL_TOGGLE_BLOCKING _IO('a', 3)
 #define IOCTL_GET_BLOCKED_IPS _IOR('a', 4, char *)
 
-void print_help() {
-    printf("\n\nMini Firewall API:\n");
+void print_help(int blocking_status) {
+    printf("Mini Firewall API - Blocking is currently %s:\n", blocking_status ? "ON" : "OFF");
     printf("1. Add IP range to block (e.g., 5.0.0.0/8)\n");
     printf("2. Remove IP range from blocking\n");
     printf("3. Toggle blocking on/off\n");
     printf("4. Show blocked IP ranges\n");
-    printf("5. Exit\n\n");
+    printf("5. Exit\n\n\n\n");
 }
 
-// Function to clear the input buffer
-void clear_input_buffer() {
-    int c;
-    while ((c = getchar()) != '\n' && c != EOF) {}  // Discard any remaining characters
+int get_blocking_status(int fd) {
+    int status;
+    if (ioctl(fd, IOCTL_TOGGLE_BLOCKING, &status) == -1) {
+        perror("Failed to get blocking status");
+        return -1;
+    }
+    return status;
 }
 
 int main() {
     int fd;
     int choice = 0;
+    int blocking_status = 1;
     char ip_range[32];
     char blocked_ips[512];
 
@@ -39,29 +43,24 @@ int main() {
         return -1;
     }
 
+    // Get initial blocking status
+    blocking_status = get_blocking_status(fd);
+
     // Loop until the user chooses to exit (choice 5)
     while (choice != 5) {
-        print_help();
+        print_help(blocking_status);
         printf("Enter your choice: ");
-        if (scanf("%d", &choice) != 1) {  // Handle non-numeric inputs
-            printf("\nInvalid choice. Please enter a number between 1 and 5.\n");
-            clear_input_buffer();  // Clear invalid input
-            continue;  // Restart loop
-        }
-        clear_input_buffer();  // Clear buffer to avoid issues
-
-        printf("\n");  // Add extra newline for spacing
+        scanf("%d", &choice);
 
         switch (choice) {
             case 1:
                 // Add IP range
                 printf("Enter the IP range to block: ");
                 scanf("%31s", ip_range);
-                clear_input_buffer();  // Clear input buffer
                 if (ioctl(fd, IOCTL_ADD_IP_RANGE, ip_range) == -1) {
                     perror("Failed to add IP range");
                 } else {
-                    printf("\nIP range %s added.\n", ip_range);
+                    printf("IP range %s added.\n", ip_range);
                 }
                 break;
 
@@ -69,20 +68,20 @@ int main() {
                 // Remove IP range
                 printf("Enter the IP range to remove: ");
                 scanf("%31s", ip_range);
-                clear_input_buffer();  // Clear input buffer
                 if (ioctl(fd, IOCTL_REMOVE_IP_RANGE, ip_range) == -1) {
                     perror("Failed to remove IP range");
                 } else {
-                    printf("\nIP range %s removed.\n", ip_range);
+                    printf("IP range %s removed.\n", ip_range);
                 }
                 break;
 
             case 3:
                 // Toggle blocking
+                blocking_status = !blocking_status;
                 if (ioctl(fd, IOCTL_TOGGLE_BLOCKING) == -1) {
                     perror("Failed to toggle blocking");
                 } else {
-                    printf("\nToggled blocking.\n");
+                    printf("Toggled blocking to %s.\n", blocking_status ? "ON" : "OFF");
                 }
                 break;
 
@@ -91,18 +90,17 @@ int main() {
                 if (ioctl(fd, IOCTL_GET_BLOCKED_IPS, blocked_ips) == -1) {
                     perror("Failed to get blocked IP ranges");
                 } else {
-                    printf("\nBlocked IP ranges:\n%s\n", blocked_ips);
+                    printf("Blocked IP ranges:\n%s", blocked_ips);
                 }
                 break;
 
             case 5:
-                printf("\nExiting...\n");
+                printf("Exiting...\n");
                 break;
 
             default:
-                printf("\nInvalid choice. Please try again.\n");
+                printf("Invalid choice. Please try again.\n");
         }
-        printf("\n");  // Add extra newline after each operation
     }
 
     // Close the device before exiting

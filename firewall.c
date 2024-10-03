@@ -8,16 +8,16 @@
 #include <linux/uaccess.h>
 #include <linux/slab.h>
 
-#define DEVICE_NAME "block_device"
+#define DEVICE_NAME "firewall_device"
 #define IOCTL_ADD_IP_RANGE _IOW('a', 1, char *)
 #define IOCTL_REMOVE_IP_RANGE _IOW('a', 2, char *)
 #define IOCTL_TOGGLE_BLOCKING _IO('a', 3)
 #define IOCTL_GET_BLOCKED_IPS _IOR('a', 4, char *)
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("daniel salame");
-MODULE_DESCRIPTION("Netfilter module to block traffic IPs with API support");
-MODULE_VERSION("0.4");
+MODULE_AUTHOR("Your Name");
+MODULE_DESCRIPTION("Netfilter module to block traffic with API support");
+MODULE_VERSION("0.1");
 
 static struct nf_hook_ops netfilter_ops_in;
 static int blocking_enabled = 1; // Start with blocking enabled
@@ -29,7 +29,7 @@ struct ip_range {
     struct list_head list;
 };
 
-static LIST_HEAD(_ip_ranges); // Linked list to hold dynamic IP ranges
+static LIST_HEAD(ip_ranges); // Linked list to hold dynamic IP ranges
 
 // Helper function to convert a string IP range (e.g., "5.0.0.0-5.0.0.255") into integers
 static int parse_ip_range(const char *ip_range_str, unsigned int *start_ip, unsigned int *end_ip)
@@ -45,20 +45,20 @@ static int parse_ip_range(const char *ip_range_str, unsigned int *start_ip, unsi
     return 0;
 }
 
-// Check if an IP belongs to any  range
-static int is__ip(unsigned int ip)
+// Check if an IP belongs to any range
+static int is_blocked_ip(unsigned int ip)
 {
     struct ip_range *range;
 
-    list_for_each_entry(range, &_ip_ranges, list) {
+    list_for_each_entry(range, &ip_ranges, list) {
         if (ip >= range->start_ip && ip <= range->end_ip)
-            return 1; // IP is from 
+            return 1; // IP is blocked
     }
     return 0;
 }
 
-// Netfilter hook function to block  IPs
-unsigned int block__ips(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
+// Netfilter hook function to block IPs
+unsigned int block_ips(void *priv, struct sk_buff *skb, const struct nf_hook_state *state)
 {
     struct iphdr *ip_header;
     unsigned int src_ip;
@@ -71,8 +71,8 @@ unsigned int block__ips(void *priv, struct sk_buff *skb, const struct nf_hook_st
         return NF_ACCEPT;
 
     src_ip = ip_header->saddr;
-    if (is__ip(src_ip)) {
-        printk(KERN_INFO "Dropping packet from ian IP: %pI4\n", &src_ip);
+    if (is_blocked_ip(src_ip)) {
+        printk(KERN_INFO "Dropping packet from blocked IP: %pI4\n", &src_ip);
         return NF_DROP;
     }
 
@@ -101,7 +101,7 @@ static long device_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 range->start_ip = start_ip;
                 range->end_ip = end_ip;
                 INIT_LIST_HEAD(&range->list);
-                list_add(&range->list, &_ip_ranges);
+                list_add(&range->list, &ip_ranges);
                 printk(KERN_INFO "Added IP range: %pI4-%pI4\n", &start_ip, &end_ip);
             } else {
                 ret = -EINVAL;
@@ -113,7 +113,7 @@ static long device_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
                 return -EFAULT;
 
             if (parse_ip_range(ip_range_str, &start_ip, &end_ip) == 0) {
-                list_for_each_entry_safe(range, tmp, &_ip_ranges, list) {
+                list_for_each_entry_safe(range, tmp, &ip_ranges, list) {
                     if (range->start_ip == start_ip && range->end_ip == end_ip) {
                         list_del(&range->list);
                         kfree(range);
@@ -132,7 +132,7 @@ static long device_ioctl(struct file *file, unsigned int cmd, unsigned long arg)
             break;
 
         case IOCTL_GET_BLOCKED_IPS:
-            list_for_each_entry(range, &_ip_ranges, list) {
+            list_for_each_entry(range, &ip_ranges, list) {
                 char range_str[32];
                 snprintf(range_str, sizeof(range_str), "%pI4-%pI4\n", &range->start_ip, &range->end_ip);
                 strcat(ip_list, range_str);
@@ -155,15 +155,15 @@ static struct file_operations fops = {
 };
 
 // Initialize the module
-static int __init block__init(void)
+static int __init firewall_init(void)
 {
-    printk(KERN_INFO "Initializing  IP blocking module...\n");
+    printk(KERN_INFO "Initializing firewall module...\n");
 
     // Register the device for communication
     register_chrdev(100, DEVICE_NAME, &fops);
 
     // Register the Netfilter hook
-    netfilter_ops_in.hook = block__ips;
+    netfilter_ops_in.hook = block_ips;
     netfilter_ops_in.hooknum = NF_INET_PRE_ROUTING;
     netfilter_ops_in.pf = PF_INET;
     netfilter_ops_in.priority = NF_IP_PRI_FIRST;
@@ -173,14 +173,14 @@ static int __init block__init(void)
 }
 
 // Cleanup the module
-static void __exit block__exit(void)
+static void __exit firewall_exit(void)
 {
     struct ip_range *range, *tmp;
 
-    printk(KERN_INFO "Exiting  IP blocking module...\n");
+    printk(KERN_INFO "Exiting firewall module...\n");
 
     // Cleanup IP ranges
-    list_for_each_entry_safe(range, tmp, &_ip_ranges, list) {
+    list_for_each_entry_safe(range, tmp, &ip_ranges, list) {
         list_del(&range->list);
         kfree(range);
     }
@@ -189,5 +189,5 @@ static void __exit block__exit(void)
     unregister_chrdev(100, DEVICE_NAME);
 }
 
-module_init(block__init);
-module_exit(block__exit);
+module_init(firewall_init);
+module_exit(firewall_exit);
